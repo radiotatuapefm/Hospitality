@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Product, Category, StockMovement } from '@/lib/supabase';
+import { Product, Category, StockMovement, UserProfile } from '@/lib/supabase';
 import { LS_KEYS, getAll, insert, update, remove, generateId, addAuditLog } from '@/lib/local-db';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -18,9 +18,11 @@ export function useProducts() {
     if (filters?.category) {
       data = data.filter((p) => p.category_id === filters.category);
     }
+
     if (filters?.active !== undefined) {
       data = data.filter((p) => p.active === filters.active);
     }
+
     if (filters?.search) {
       const searchLower = filters.search.toLowerCase();
       data = data.filter((p) => p.name.toLowerCase().includes(searchLower));
@@ -30,6 +32,7 @@ export function useProducts() {
       ...p,
       category: categories.find((c) => c.id === p.category_id),
     }));
+
     data.sort((a, b) => a.name.localeCompare(b.name));
 
     setProducts(data);
@@ -45,16 +48,21 @@ export function useProducts() {
       ...product,
       id: generateId(),
     } as Product);
+
     addAuditLog('create_product', 'products', newProduct.id, null, newProduct);
     setProducts((prev) => [...prev, newProduct]);
+
     return newProduct;
   };
 
   const updateProduct = (id: string, updates: Partial<Product>) => {
     const oldProduct = getAll<Product>(LS_KEYS.PRODUCTS).find((p) => p.id === id);
+
     const updated = update<Product>(LS_KEYS.PRODUCTS, id, updates);
     if (!updated) throw new Error('Product not found');
+
     addAuditLog('update_product', 'products', id, oldProduct, updated);
+
     setProducts((prev) => prev.map((p) => (p.id === id ? updated : p)));
     return updated;
   };
@@ -62,7 +70,9 @@ export function useProducts() {
   const deleteProduct = (id: string) => {
     const removed = remove<Product>(LS_KEYS.PRODUCTS, id);
     if (!removed) throw new Error('Product not found');
+
     addAuditLog('delete_product', 'products', id, null, null);
+
     setProducts((prev) => prev.filter((p) => p.id !== id));
   };
 
@@ -84,8 +94,11 @@ export function useCategories() {
 
   const fetchCategories = useCallback(() => {
     setLoading(true);
+
     const data = getAll<Category>(LS_KEYS.CATEGORIES);
+
     data.sort((a, b) => a.sort_order - b.sort_order);
+
     setCategories(data);
     setLoading(false);
   }, []);
@@ -99,7 +112,9 @@ export function useCategories() {
       ...category,
       id: generateId(),
     } as Category);
+
     addAuditLog('create_category', 'categories', newCategory.id, null, newCategory);
+
     setCategories((prev) => [...prev, newCategory]);
     return newCategory;
   };
@@ -107,7 +122,9 @@ export function useCategories() {
   const updateCategory = (id: string, updates: Partial<Category>) => {
     const updated = update<Category>(LS_KEYS.CATEGORIES, id, updates);
     if (!updated) throw new Error('Category not found');
+
     addAuditLog('update_category', 'categories', id, null, updated);
+
     setCategories((prev) => prev.map((c) => (c.id === id ? updated : c)));
     return updated;
   };
@@ -115,7 +132,9 @@ export function useCategories() {
   const deleteCategory = (id: string) => {
     const removed = remove<Category>(LS_KEYS.CATEGORIES, id);
     if (!removed) throw new Error('Category not found');
+
     addAuditLog('delete_category', 'categories', id, null, null);
+
     setCategories((prev) => prev.filter((c) => c.id !== id));
   };
 
@@ -133,13 +152,16 @@ export function useCategories() {
 export function useStock() {
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [loading, setLoading] = useState(true);
+
   const { user } = useAuth();
 
   const fetchMovements = useCallback((productId?: string, limit?: number) => {
     setLoading(true);
+
     let data = getAll<StockMovement>(LS_KEYS.STOCK_MOVEMENTS);
+
     const products = getAll<Product>(LS_KEYS.PRODUCTS);
-    const users = getAll(LS_KEYS.REGISTERED_USERS);
+    const users = getAll<UserProfile>(LS_KEYS.REGISTERED_USERS);
 
     if (productId) {
       data = data.filter((m) => m.product_id === productId);
@@ -148,9 +170,13 @@ export function useStock() {
     data = data.map((m) => ({
       ...m,
       product: products.find((p) => p.id === m.product_id),
-      user: users.find((u) => u.id === m.user_id),
+      user: users.find((u) => u.id === m.user_id) ?? undefined,
     }));
-    data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    data.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
 
     if (limit) {
       data = data.slice(0, limit);
@@ -173,10 +199,14 @@ export function useStock() {
   ) => {
     const products = getAll<Product>(LS_KEYS.PRODUCTS);
     const product = products.find((p) => p.id === productId);
+
     if (!product) throw new Error('Product not found');
 
     const previousStock = product.stock;
-    const newStock = type === 'entrada' ? previousStock + quantity : previousStock - quantity;
+    const newStock =
+      type === 'entrada'
+        ? previousStock + quantity
+        : previousStock - quantity;
 
     const movement = insert<StockMovement>(LS_KEYS.STOCK_MOVEMENTS, {
       id: generateId(),
@@ -185,15 +215,17 @@ export function useStock() {
       quantity,
       previous_stock: previousStock,
       new_stock: newStock,
-      reason,
-      reference_id: referenceId,
-      user_id: user?.id || null,
+      reason: reason ?? null,
+      reference_id: referenceId ?? null,
+      user_id: user?.id ?? null,
     } as StockMovement);
 
     update<Product>(LS_KEYS.PRODUCTS, productId, { stock: newStock });
+
     addAuditLog('stock_movement', 'stock_movements', movement.id, null, movement);
 
     setMovements((prev) => [movement, ...prev]);
+
     return movement;
   };
 
